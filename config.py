@@ -24,11 +24,16 @@ CORPUS = os.getenv("AI201_CORPUS", "campus_life")
 
 
 # ─── Chunking (Milestone 3) ──────────────────────────────────────────────────
-# These are deliberately plain, generic numbers. Milestone 3 is where you
-# replace them with numbers that fit the documents you actually read.
+# Measured against campus_life: 88 posts, 178-549 characters each, every one
+# opening with a bare title line, 271 paragraph blocks with a median of 93
+# characters. See README "Chunking Strategy" for the experiment behind these.
+#
+# CHUNK_SIZE is a SOFT target, not a hard cut. chunker.py::split_documents
+# never splits a paragraph, so a single long paragraph produces a chunk over
+# this size rather than being cut in half.
 
-CHUNK_SIZE = 800        # characters per chunk
-CHUNK_OVERLAP = 120     # characters shared between neighbouring chunks
+CHUNK_SIZE = 300        # target characters per chunk, title included
+CHUNK_OVERLAP = 100     # characters of whole trailing sentences carried forward
 
 
 # ─── Retrieval (Milestone 4) ─────────────────────────────────────────────────

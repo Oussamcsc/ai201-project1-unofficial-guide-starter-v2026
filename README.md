@@ -1,19 +1,10 @@
 # The Unofficial Guide
 
-<!-- Replace this line with your name and which corpus you picked. -->
+**Oussama Abouyahia** — corpus: `campus_life`
 
-> **This file is your submission.** Fill it in as you go — most sections get
-> written during the milestone that produces them, not at the end.
->
-> How the starter works, and every command you'll need, is in `RUNNING.md`.
-> Leave that file alone.
->
-> **Paste everything as text.** No screenshots, no video. A typed table gets
-> full credit; a picture of the same table gets none.
->
-> Delete these instruction blocks as you replace them. The `<!-- -->` comments
-> are notes to you and don't show up when the page renders — you can leave them
-> or remove them.
+A retrieval-augmented question-answering system over student-written campus
+advice, built for AI-201 Project 1. How the starter works and every command
+you'll need is in `RUNNING.md`.
 
 ---
 
@@ -21,11 +12,30 @@
 
 ## What This Does
 
-<!-- Three or four sentences. Which corpus you picked, and the kinds of
-     questions your system answers. Write it for someone who has never seen
-     this repo.
+This is a question-answering system over `campus_life` — 88 short posts, about
+28,000 characters in total, in which students tell each other how the place
+actually works: which dining hall has a twenty-minute queue at lunch, what the
+housing lottery really sorts on, which dorm has radiators you can't turn down.
+It is the knowledge that never makes it into the course catalogue.
 
-     Milestone 5. -->
+You ask a plain question and it answers from those documents and nothing else,
+naming the file it used. It answers factual questions with a specific right
+answer — *"How quickly do west-lot parking permits sell out?"*, *"What appears
+on my transcript if I drop a course after week two?"*, *"How are juniors and
+seniors prioritized in the housing lottery?"* — rather than matters of taste
+like which dining hall is best, which these documents disagree about anyway.
+
+Two separate mechanisms stop it inventing things. A relevance gate measures how
+close the best retrieved chunk is before the model is called at all, and
+refuses outright above 0.70. Anything that gets past the gate is answered under
+an instruction to use only the supplied documents and to say so when they don't
+cover the question. The first catches questions from another world; the second
+catches the near misses — campus-sounding questions these particular documents
+happen not to cover, which measure *inside* the answerable range and which no
+cutoff could separate. Both layers are measured in the sections below.
+
+Run it with `python app.py index` then `python app.py ask "your question"`.
+Every command is in `RUNNING.md`.
 
 ## Chunking Strategy
 
@@ -379,18 +389,45 @@ passing a fixed count. That's a unit 2 change, noted here so it's on record.
 
 ## How I Used AI
 
-<!-- Two specific moments. For each: what you asked for, what came back, and
-     what you changed about it.
+**1. I made it prove the chunking decision instead of taking its design.**
 
-     "I asked Claude to write the chunking function from my notes. It ignored
-     the overlap, so I added that myself" is the level of detail we're after.
-     "I used AI to help me code" is not.
+I asked Claude to help with Milestone 3. It came back with a strategy it called
+title-anchored paragraph packing and a question about what size to use. I
+didn't accept the premise: if no document in `campus_life` reaches the
+starter's 800-character window, nothing ever splits, so one post already *is*
+one chunk — why isn't that the right answer? I asked what I was missing.
 
-     Milestone 5. -->
+It couldn't settle that from argument, so it built five different indexes as
+Chroma variants and measured them against my five questions. The answer was
+that **I was right and the reasoning was wrong**: no strategy beat any other on
+my five questions, because all five target short single-topic admin posts. But
+probes aimed at the long `housing_*` posts, which none of my questions touch,
+showed whole-post chunking retrieving the Old Brewhouse heating question at
+0.687 — above my cutoff, refused.
 
-**1.**
+What I changed: it told me the strategy would split 16 documents and leave 72
+whole. That was wrong. Sweeping the parameter showed it splitting 59 of 88 at
+the size it had proposed. The sweep is why `CHUNK_SIZE` is 300, which splits
+46 and leaves 42, and not the 260 it originally suggested.
 
-**2.**
+**2. I didn't let it stop at the table the assignment asked for.**
+
+For Milestone 4 I asked for the ten distances. They came back exactly as the
+brief predicts — 0.173–0.370 in corpus, 0.825–0.932 out, midpoint 0.597 — which
+points straight at keeping the starter's 0.6. Every cutoff between 0.45 and
+0.75 scores identically on those ten rows, so the table I was told to build
+cannot actually decide the number, and I'd have written down 0.6 and called it
+measured.
+
+Fifteen further questions the corpus genuinely answers reach 0.610 — *"Do I
+need an adviser signature to withdraw?"*, answered almost word for word in
+`admin_withdrawal_deadline.txt`. At 0.6 my own system refuses it. That's what
+moved the cutoff to 0.70.
+
+I also stopped taking stated figures on trust. The brief says the starter
+produces a 2-character chunk on `advice_threads`; measured, it's 28 characters
+(`re than breadth across five.`). This README says 28, because that's what I
+can reproduce.
 
 <!-- ── Stretch features ─────────────────────────────────────────────────────
      Doing one? Say so here BEFORE you start. A feature this README never

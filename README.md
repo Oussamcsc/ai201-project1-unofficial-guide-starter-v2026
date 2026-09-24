@@ -207,30 +207,175 @@ the embedder. Keeping the sentence intact is what keeps them apart.*
 
 ## Sample Answer
 
-<!-- One complete question and answer, pasted as text, with the source line
-     visible. Milestone 4. -->
+**Question:** How are juniors and seniors prioritized in the housing lottery?
 
-**Question:**
-
-**Answer:**
+**Answer:** (verbatim from `python app.py ask "..."`)
 
 ```
+  (best distance 0.205, cutoff 0.7)
+
+Juniors and seniors are ordered by accumulated credit hours first, with ties
+broken randomly in the housing lottery.
+
+Source: admin_housing_lottery.txt
+
+Sources retrieved: admin_housing_lottery.txt, advising_registration.txt,
+course_stat_150_exams.txt, housing_tamsin_court.txt
+
+1 model calls this session, 469 tokens (436 in, 33 out)
 ```
 
-**My relevance cutoff:**
+This is the distinction the corpus exists to make. A model answering from
+training data would say a housing lottery is random — that's what the word
+means. `admin_housing_lottery.txt` says rising sophomores are random but
+juniors and seniors are ordered by credit hours and only tie-break randomly.
+The answer gets it right and names the file.
 
-<!-- The number you set in config.py, and how you got there.
+**My relevance cutoff: 0.70** (`config.THRESHOLD`)
 
-     You ran five questions your corpus covers and the five in OUT_OF_SCOPE
-     that it clearly doesn't, and wrote down the best distance for each. What
-     did those two groups look like? Where was the gap? Put the actual numbers
-     here — the table below wants all ten rows.
+**Top-k: 4** (`config.TOP_K`)
 
-     Milestone 4. -->
+### The two groups — all ten rows
 
 | Question | In corpus? | Best distance |
 |---|---|---|
-|  |  |  |
+| How quickly do student parking permits for the west lots sell out? | yes | 0.193 |
+| How are juniors and seniors prioritized in the housing lottery? | yes | 0.205 |
+| How far in advance should students book an adviser appointment before registration? | yes | 0.370 |
+| What appears on your transcript if you drop a course after week two but before the dropping deadline? | yes | 0.202 |
+| How long is the wait at Kestrel Commons between 12:15 and 1:00? | yes | 0.173 |
+| What is the capital of Mongolia? | no | 0.825 |
+| How do I change the oil in a diesel engine? | no | 0.932 |
+| Who won the 1994 World Cup? | no | 0.886 |
+| What is the recommended dosage of ibuprofen for a headache? | no | 0.849 |
+| How do I write a for loop in Rust? | no | 0.891 |
+
+Two groups, clearly separated: **0.173–0.370** and **0.825–0.932**. The
+midpoint of that gap is 0.597, which is almost exactly the 0.6 the starter
+ships. On this table alone, every cutoff from 0.45 to 0.75 scores identically
+— 0 wrong refusals, 0 wrong passes. **The table cannot tell me what the number
+should be**, and I nearly stopped here and kept 0.6 on the strength of it.
+
+### Why I didn't keep 0.6
+
+My five test questions all target short, single-topic admin posts, so the
+in-corpus group above is easier than the corpus really is. I wrote fifteen more
+questions the documents genuinely answer and measured those too:
+
+| Question the corpus answers | Best distance |
+|---|---|
+| How much does laundry cost in the Old Brewhouse? | 0.170 |
+| What does an official transcript cost? | 0.209 |
+| Can I change my meal plan after the term starts? | 0.281 |
+| How do group study rooms get booked? | 0.290 |
+| How many hours a week outside class does CS 210 take? | 0.300 |
+| Is Innisfree Hall noisy? | 0.301 |
+| What is the pass/fail deadline? | 0.339 |
+| How long does the shuttle take? | 0.369 |
+| When does the salad bar go downhill? | 0.442 |
+| What is the printing quota? | 0.445 |
+| Are CS 210 midterms curved? | 0.424 |
+| What happens if I miss the parking permit window? | 0.502 |
+| Which building has heating that runs hot and cannot be adjusted? | 0.591 |
+| What should I bring for winter? | 0.592 |
+| **Do I need an adviser signature to withdraw?** | **0.610** |
+
+That last one is the decisive measurement. `admin_withdrawal_deadline.txt`
+says *"Withdrawal runs to week ten, **requires an adviser signature**, and puts
+a W on the transcript."* The question is answered almost word for word, and it
+retrieves at 0.610. **At the starter's 0.6, my system refuses it.**
+
+So the honest in-corpus range is **0.170 – 0.610**, not 0.173 – 0.370. Against
+out-of-scope at 0.825 – 0.932, the real gap is **0.610 to 0.825**, and I put
+the cutoff at its midpoint:
+
+| | |
+|---|---|
+| Highest distance on a question the corpus answers | 0.610 |
+| **My cutoff** | **0.70** |
+| Lowest distance on a question it doesn't | 0.825 |
+
+That leaves 0.090 of headroom above the hardest answerable question and 0.125
+below the easiest out-of-scope one. Verified after the change: **all 5 test
+questions still pass the gate, and all 5 `OUT_OF_SCOPE` questions are still
+refused, 5/5.**
+
+### What 0.70 gets wrong, and why no number fixes it
+
+The `OUT_OF_SCOPE` questions are from "a different world entirely" — Mongolia,
+diesel engines, Rust. That's what makes the gap look clean. So I also tried
+eight questions that *sound* like campus questions but that my documents don't
+cover:
+
+| Campus-flavoured, not in the corpus | Best distance | What it retrieved |
+|---|---|---|
+| What time does the campus bookstore close on Sunday? | 0.387 | `study_library_hours.txt` |
+| How do I appeal a parking ticket I got on campus? | 0.568 | `admin_grade_appeals.txt` |
+| How do I apply for a single room as a first-year? | 0.589 | `advising_registration.txt` |
+| Is there a shuttle to the airport during break? | 0.591 | `transit_shuttle.txt` |
+| Where do I get a student ID card replaced? | 0.605 | `transit_shuttle.txt` |
+| What is tuition for out-of-state students? | 0.618 | `admin_printing_quota.txt` |
+| What are the rules for keeping a pet in the dorms? | 0.671 | `housing_innisfree_hall.txt` |
+| How do I join the varsity swimming team? | 0.724 | `orientation_what_matters.txt` |
+
+These land at **0.387–0.724 — inside my in-corpus range**. There is no cutoff
+that refuses these and still answers the withdrawal question at 0.610. The two
+groups genuinely overlap, so **the gate cannot solve this**. Lowering the
+cutoff to catch them would refuse real questions, which is the more damaging
+error of the two.
+
+### The grounding instruction — read, tested, kept
+
+That overlap is exactly what `GROUNDING_INSTRUCTION` in
+[generate.py:276](generate.py#L276) is the second layer for, so I tested it
+against the questions the gate lets through rather than assuming:
+
+```
+$ python app.py ask "What time does the campus bookstore close on Sunday?"
+  (best distance 0.387, cutoff 0.7)
+I don't have enough information to answer your question, as the provided
+documents do not mention the campus bookstore.
+```
+
+```
+$ python app.py ask "What are the rules for keeping a pet in the dorms?"
+  (best distance 0.671, cutoff 0.7)
+I don't have enough information to answer your question.
+```
+
+And the harder case — a question whose *topic* is in the corpus but whose
+*fact* is not. `admin_parking_permits.txt` covers west-lot permits in detail
+and never states a price:
+
+```
+$ python app.py ask "How much does a west lot parking permit cost?"
+  (best distance 0.363, cutoff 0.7)
+I do not have enough information to answer how much a west lot parking permit
+costs.
+
+Source: admin_parking_permits.txt
+```
+
+That is the case where a model invents "$150 per semester" and sounds right.
+It didn't. **I left `GROUNDING_INSTRUCTION` unchanged** — not because I skipped
+the step, but because I tried three ways to make answers drift past the sources
+and couldn't. Tightening a prompt that is already holding would be changing
+something I have no evidence is broken.
+
+### Why top-k went from 5 to 4
+
+The answer-bearing chunk comes back at **rank 1 for all five test questions**,
+so k isn't doing retrieval work — every value from 3 to 8 scores 5/5 on
+criterion 1. What k actually controls is how much loosely-related material
+rides into the prompt. At k=5 the fifth chunk sat at 0.632, 0.747, 0.636, 0.576
+and 0.408 — three of those five are further away than 0.610, the hardest
+question my corpus genuinely answers. Material that distant is not context, it
+is noise, and k=4 drops it at zero cost to criterion 1.
+
+The tail is still not clean at k=4 — Q2's fourth chunk is `housing_tamsin_court.txt`
+at 0.736, which has nothing to do with the lottery. The real fix is to filter
+the retrieved chunks by distance before building the prompt, rather than
+passing a fixed count. That's a unit 2 change, noted here so it's on record.
 
 ## How I Used AI
 

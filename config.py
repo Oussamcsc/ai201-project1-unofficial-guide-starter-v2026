@@ -38,17 +38,35 @@ CHUNK_OVERLAP = 100     # characters of whole trailing sentences carried forward
 
 # ─── Retrieval (Milestone 4) ─────────────────────────────────────────────────
 
-TOP_K = 5               # how many chunks to pull back per question
+TOP_K = 4               # how many chunks to pull back per question
+# Measured in Milestone 4: the answer-bearing chunk comes back at rank 1 for
+# all five test questions, so k is not doing retrieval work — it is deciding
+# how much loosely-related material rides along into the prompt. At k=5 the
+# fifth chunk sat at 0.632-0.747 for four of the five, i.e. past the gate's own
+# cutoff. Dropping to 4 removes it at no cost to criterion 1.
 
 # The relevance gate. If the best chunk is further away than this, the system
 # refuses to answer instead of handing the model thin material.
 #
 # LOWER IS BETTER: 0.3 is a close match, 0.9 is unrelated.
 #
-# 0.6 is a reasonable starting point, not a right answer. Milestone 4 has you
-# measure your own two groups of distances and put the cutoff in the gap.
-# Most corpora land somewhere between 0.45 and 0.75.
-THRESHOLD = 0.6
+# Measured in Milestone 4, and the starter's 0.6 turned out to be wrong here.
+#
+#   5 OUT_OF_SCOPE questions          0.825 - 0.932
+#   5 test questions                  0.173 - 0.370
+#   15 further questions the corpus
+#   genuinely answers                 0.170 - 0.610   <-- the one that matters
+#
+# The five test questions all target short single-topic admin posts, so they
+# make the in-corpus group look tighter than it is. Widen the sample and the
+# ceiling moves to 0.610 — "Do I need an adviser signature to withdraw?",
+# which admin_withdrawal_deadline.txt answers in those exact words. At 0.6 the
+# gate refuses it.
+#
+# The real gap is 0.610 to 0.825. 0.70 sits in it with room on both sides:
+# 0.090 above the hardest answerable question, 0.125 below the easiest
+# out-of-scope one. Criterion 3 still refuses 5 of 5.
+THRESHOLD = 0.70
 
 
 # ─── Models ──────────────────────────────────────────────────────────────────

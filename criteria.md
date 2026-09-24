@@ -48,6 +48,16 @@ in at least 4 of 5 tries.
 The five questions in OUT_OF_SCOPE concern subjects outside the campus documents. Most should therefore be rejected before generation. Some share vocabulary with campus topics, such as programming and courses, so semantic similarity may allow an irrelevant question through. Four of five requires consistent refusal without assuming perfect separation.
 
 The cutoff has not yet been calibrated. Actual distances and the chosen cutoff will be recorded in the README during Milestone 4.
+
+**Milestone 4 update (unit 1):** done — cutoff set to **0.70**, all ten
+distances and the reasoning are in README → *Sample Answer*. Measured result at
+that cutoff: the gate refuses **5 of 5** OUT_OF_SCOPE questions (0.825–0.932),
+and all five test questions still pass. The concern written above — that
+vocabulary overlap might let an irrelevant question through — turned out to be
+real, but not for these five: campus-flavoured questions the corpus doesn't
+cover land at 0.387–0.724, inside the in-corpus range, so no cutoff separates
+them. `GROUNDING_INSTRUCTION` refused them instead. Evidence in the README.
+
 ---
 
 ## 4. Something about your chunks

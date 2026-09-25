@@ -56,3 +56,34 @@ def check(results: list[Result], threshold: float | None = None) -> GateDecision
 
     best = min(r.distance for r in results)
     return GateDecision(passed=best < threshold, best_distance=best, threshold=threshold)
+
+
+def keep_relevant(results: list[Result], threshold: float | None = None) -> list[Result]:
+    """
+    Drop retrieved chunks the gate would not have accepted as a best match.
+
+    Unit 2 improvement. `check` above decides whether to answer at all by
+    looking only at `min(distance)`, and `store.py::search` hands back a fixed
+    count regardless of distance. Between them, the same distance gets treated
+    two opposite ways depending on where it ranked:
+
+        best chunk at 0.71  ->  refuse the question outright, too thin
+        4th chunk at 0.736  ->  put it in the prompt as context
+
+    Measured on my five test questions before this existed, 8 of the 20 chunks
+    reaching a prompt were past 0.610 — the furthest distance unit 1 found on a
+    question the corpus genuinely answers — and two were past the 0.70 cutoff
+    itself. `housing_tamsin_court.txt#1` at 0.736 was context for a question
+    about the housing lottery.
+
+    Applying one number in both directions is the whole change. A chunk is
+    worth reasoning from, or it isn't.
+
+    This can never empty the list: `check` has already established that the
+    best chunk is under the threshold, so that chunk always survives. The
+    guard below is for callers that filter without gating first.
+    """
+    threshold = config.THRESHOLD if threshold is None else threshold
+
+    kept = [r for r in results if r.distance < threshold]
+    return kept or results[:1]

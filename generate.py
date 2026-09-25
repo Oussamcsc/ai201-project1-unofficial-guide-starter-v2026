@@ -282,7 +282,7 @@ Rules:
 - Be brief. Two or three sentences is usually enough."""
 
 
-def build_prompt(question: str, results) -> str:
+def build_prompt(question: str, results, threshold: float | None = None) -> str:
     """
     Assemble the grounded prompt out of retrieved chunks.
 
@@ -290,9 +290,19 @@ def build_prompt(question: str, results) -> str:
     being sent — `python app.py ask "..." --show-prompt` prints exactly what
     this returns. Reading it once is the fastest way to see that retrieval,
     not the model, decides what an answer can possibly be based on.
+
+    Unit 2 improvement: the chunks are filtered by `gate.keep_relevant` before
+    they go in, so a chunk too far away to be answered from is also too far
+    away to be context. Reasons and measurements are in that function and in
+    README "The Improvement". Filtering here rather than at each call site
+    means app.py, run_eval.py and serve.py all get it without changing, and
+    `--show-prompt` keeps showing exactly what was sent.
     """
+    import gate  # here, not at module scope: gate imports store, which is heavy
+
     context = "\n\n".join(
-        f"[from {r.source}]\n{r.text}" for r in results
+        f"[from {r.source}]\n{r.text}"
+        for r in gate.keep_relevant(results, threshold)
     )
     return (
         f"Documents:\n\n{context}\n\n"
@@ -301,13 +311,17 @@ def build_prompt(question: str, results) -> str:
     )
 
 
-def answer_from_chunks(question: str, results, cache: bool = True) -> str:
+def answer_from_chunks(
+    question: str, results, cache: bool = True, threshold: float | None = None
+) -> str:
     """
     Build a grounded prompt out of retrieved chunks and send it.
 
     This is the second layer of grounding. The relevance gate in gate.py is the
-    first — it has already decided these chunks are close enough to be worth
-    answering from.
+    first — it has already decided the *best* of these chunks is close enough
+    to be worth answering from. Since the unit 2 improvement it also decides
+    which of the rest come along, so `threshold` is forwarded to keep one
+    number governing both.
     """
-    prompt = build_prompt(question, results)
+    prompt = build_prompt(question, results, threshold)
     return generate(prompt, system=GROUNDING_INSTRUCTION, cache=cache)

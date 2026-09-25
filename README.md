@@ -444,27 +444,143 @@ can reproduce.
 
 ## Run Log — Before
 
-<!-- Your five criteria, three runs each. `python run_eval.py --label before`
-     runs the questions, puts the OUT_OF_SCOPE ones through the gate, and
-     writes it all into results/ for you. Targets come from criteria.md; the
-     verdict column is your call.
-
-     Criterion 3 is measured in one deterministic pass rather than three, so
-     the same number goes in all three run columns. That's correct, not lazy.
-
-     Milestone 1. -->
+Raw file: [`results/run_2026-09-25_1615_before.md`](results/run_2026-09-25_1615_before.md),
+written by `run_eval.py::main`. Three runs of all five questions with caching
+off, 15 model calls, 6,922 tokens. No code changed between the runs.
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. Retrieved chunk contains the answer | 4 of 5 |  |  |  |  |
-| 2. Every answer names a source | 5 of 5 |  |  |  |  |
-| 3. Gate stops out-of-corpus questions | 4 of 5 |  |  |  |  |
-| 4. | | | | | |
-| 5. | | | | | |
+| 1. Retrieved chunk contains the answer | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 2. Every answer names a source | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 3. Gate stops out-of-corpus questions | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 4. Chunks keep the answer sentence whole, with its topic | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 5. Answer is correct and grounded in what it cites | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
 
-<!-- Underneath, paste the REAL output for each criterion from one of your
-     runs — the actual text your system produced, not a description of it.
-     Name the file and function that produced it. -->
+**Three of these five do not vary between runs, and that is a fact about the
+criteria rather than a shortcut.** Criterion 3 is a comparison against a fixed
+number. Criterion 1 is a fixed query against a fixed index — the same chunks
+come back every time. Criterion 4 never touches a run at all; it is a property
+of `chunker.py::split_documents` output. Only criteria 2 and 5 depend on
+generation, and those are the two where the text below actually differs between
+runs.
+
+### Criterion 1 — a retrieved chunk contains the answer · 5/5
+
+Produced by `scorer.py::retrieval_contains_answer` over `store.py::search`
+(`python scorer.py`). Verbatim:
+
+```
+  Q1  PASS  expects 'three days'  (best distance 0.193)
+        1. admin_parking_permits.txt#0                0.193  <-- has the answer
+        2. dining_halden_hall.txt#1                   0.613
+        3. advising_registration.txt#0                0.619
+        4. transit_walking.txt#0                      0.626
+  Q2  PASS  expects 'credit hours'  (best distance 0.205)
+        1. admin_housing_lottery.txt#0                0.205  <-- has the answer
+        2. advising_registration.txt#0                0.674  <-- has the answer
+        3. course_stat_150_exams.txt#0                0.724
+        4. housing_tamsin_court.txt#1                 0.736
+  Q3  PASS  expects 'two weeks'  (best distance 0.370)
+        1. advising_registration.txt#0                0.370  <-- has the answer
+        2. health_center.txt#1                        0.563
+        3. admin_library_holds.txt#0                  0.616
+        4. orientation_what_matters.txt#0             0.625
+  Q4  PASS  expects 'W'  (best distance 0.202)
+        1. admin_add_drop_deadline.txt#0              0.202  <-- has the answer
+        2. admin_withdrawal_deadline.txt#0            0.418  <-- has the answer
+        3. admin_pass_fail_option.txt#0               0.505
+        4. admin_transcript_requests.txt#0            0.537
+  Q5  PASS  expects '20 to 25 minutes'  (best distance 0.173)
+        1. dining_kestrel_commons_followup.txt#0      0.173  <-- has the answer
+        2. dining_kestrel_commons_followup.txt#1      0.390
+        3. dining_halden_hall_followup.txt#0          0.402
+        4. dining_the_ridgeway_cafe_followup.txt#0    0.407
+
+  -> 5 of 5 questions. Target: 4 of 5.
+```
+
+### Criterion 2 — every answer names a source · 5/5 in all three runs
+
+Produced by `generate.py::answer_from_chunks` under `GROUNDING_INSTRUCTION`,
+checked by `scorer.py::names_a_source`. The filename is inside the answer text
+— app.py prints a `Sources retrieved:` line of its own, and counting that would
+score the retriever rather than the answer. All 15 answers named a file, and
+every file named was one that had really been retrieved. The model is
+inconsistent about *how* it cites, which is worth seeing — three formats from
+three questions in run 1:
+
+```
+Student permits for the west lots sell out in about three days. (Source: admin_parking_permits.txt)
+```
+```
+Juniors and seniors are ordered by accumulated credit hours first, with ties broken randomly in the housing lottery.
+
+Source: admin_housing_lottery.txt
+```
+```
+If you drop a course after week two, it shows as a W on your transcript (admin_add_drop_deadline.txt).
+```
+
+Run 2 of question 2 wrapped the filename in backticks — `` `admin_housing_lottery.txt` `` — which is the one place the three runs visibly differ on this criterion. The criterion says *names* a source, not *formats it a fixed way*, so all three count.
+
+### Criterion 3 — the gate stops out-of-corpus questions · 5/5
+
+Produced by `run_eval.py::check_out_of_scope` at cutoff 0.70. Verbatim:
+
+```
+Out-of-scope questions (the gate should refuse these):
+  refused  (best distance 0.825)  What is the capital of Mongolia?
+  refused  (best distance 0.932)  How do I change the oil in a diesel engine?
+  refused  (best distance 0.886)  Who won the 1994 World Cup?
+  refused  (best distance 0.849)  What is the recommended dosage of ibuprofen for a headache?
+  refused  (best distance 0.891)  How do I write a for loop in Rust?
+  -> gate refused 5 of 5
+```
+
+### Criterion 4 — chunks keep the answer sentence whole, with its topic · 5/5
+
+Produced by `scorer.py::chunk_check` on `chunker.py::split_documents` output.
+It never goes through retrieval — the criterion exists to say something about
+the chunks themselves. Verbatim:
+
+```
+  Q1  PASS  admin_parking_permits.txt (1 chunk(s))
+        in admin_parking_permits.txt#0
+  Q2  PASS  admin_housing_lottery.txt (1 chunk(s))
+        in admin_housing_lottery.txt#0
+  Q3  PASS  advising_registration.txt (1 chunk(s))
+        in advising_registration.txt#0
+  Q4  PASS  admin_add_drop_deadline.txt (1 chunk(s))
+        in admin_add_drop_deadline.txt#0
+  Q5  PASS  dining_kestrel_commons.txt (2 chunk(s))
+        in dining_kestrel_commons.txt#0
+
+  -> 5 of 5 posts pass. Target: 5 of 5.
+```
+
+### Criterion 5 — the answer is correct and grounded in what it cites · 5/5 in all three runs
+
+Produced by `generate.py::answer_from_chunks`, scored by `scorer.py::judge` and
+then read by hand for the half `judge` cannot decide (see that function's
+docstring). Question 2 is the one that moves between runs, so all three of its
+answers are here:
+
+```
+run 1: Juniors and seniors are ordered by accumulated credit hours first, with ties broken randomly in the housing lottery.
+run 2: Juniors and seniors are ordered by accumulated credit hours first, with ties broken randomly in the housing lottery.
+run 3: Juniors and seniors are ordered by accumulated credit hours first, with a random tie-break used only when necessary.
+```
+
+`admin_housing_lottery.txt` says *"juniors and seniors are ordered by
+accumulated credit hours first, and only tie-break randomly."* Run 3's
+rephrasing — "used only when necessary" — is the one I looked at hardest,
+because it adds a word the document does not use. I counted it supported: "only
+tie-break randomly" means the random step applies only to ties, which is what
+"only when necessary" says. It is a paraphrase, not a new claim.
+
+This is also the distinction the corpus exists to make. A model answering from
+training data would say a housing lottery is random, because that is what the
+word means. All three runs got it right and named the file.
 
 ## Verdicts
 

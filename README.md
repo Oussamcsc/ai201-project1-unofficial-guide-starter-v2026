@@ -629,23 +629,100 @@ not measurability, and that belongs in *What I'd Do Differently*.
 
 ## Diagnoses
 
-<!-- For each miss: which stage caused it, and how. The stage alone isn't
-     enough — you need the mechanism.
+**I missed nothing. Five for five, three times over.** The brief says a system
+that clears every criterion on the first try usually means the criteria were
+safe rather than the system excellent, and having gone looking, that is what
+happened here.
 
-     Not a diagnosis: "Question 3 didn't work."
-     A diagnosis:     "Question 3 asks about laundry costs. The answer is in
-                       one sentence that got split across two chunks, so
-                       neither chunk on its own contains it."
+### The pattern, and it is one problem rather than five
 
-     The five stages: loading → chunking → embedding → retrieval → generation.
+All five of my test questions ask for a **single short fact from a single
+short, single-topic admin post**: three days, credit hours, two weeks, a W, 20
+to 25 minutes. Unit 1 already found this — *"My five test questions all target
+short, single-topic admin posts, so the in-corpus group above is easier than
+the corpus really is"* — and used fifteen extra questions to set the gate
+because of it. What I didn't do in unit 1 was carry that insight into the
+criteria. All five criteria are evaluated against those same five easy
+questions, so **every criterion inherits the same blind spot**, and passing all
+five is closer to one result than to five.
 
-     Look for a pattern. If three misses all ask about numbers, that's one
-     problem, not three.
+The clearest evidence is that the answer-bearing chunk comes back at **rank 1
+for all five questions**, at distances of 0.173 to 0.370. Criterion 1 only asks
+that it be somewhere in the top four. There is no question in my set where
+retrieval has to work hard, so criterion 1 cannot fail and cannot tell me
+anything.
 
-     Missed nothing? Say so, then say honestly whether your targets were set
-     low, and which one you'd tighten and to what.
+### What the test cannot see: the retrieval tail
 
-     Milestone 3. -->
+Criterion 1 asks whether *one* of the four retrieved chunks has the answer. It
+says nothing about the other three, and those three go into the prompt too.
+Measured across all five questions (`store.py::search`, top-k 4):
+
+| Q | rank 1 | rank 2 | rank 3 | rank 4 |
+|---|---|---|---|---|
+| 1 | 0.193 | 0.613 | 0.619 | 0.626 |
+| 2 | 0.205 | 0.674 | **0.724** | **0.736** |
+| 3 | 0.370 | 0.563 | 0.616 | 0.625 |
+| 4 | 0.202 | 0.418 | 0.505 | 0.537 |
+| 5 | 0.173 | 0.390 | 0.402 | 0.407 |
+
+**8 of the 20 chunks that reach a prompt are further away than 0.610** — the
+hardest question unit 1 found the corpus genuinely answers. **Two of them are
+past 0.70, the gate's own cutoff.**
+
+That second number is not a matter of taste, it is the pipeline contradicting
+itself. **Stage: retrieval.** **Mechanism:** `store.py::search` returns a fixed
+count and `gate.py::check` only ever looks at `min(distance)`, so a chunk's
+distance decides its fate differently depending on where it ranks. Ask a
+question whose best chunk is 0.71 and the system refuses to answer at all,
+calling that material too thin to reason from. Ask question 2, and
+`housing_tamsin_court.txt#1` at **0.736** — further away than the chunk that
+would have triggered a refusal — is placed in the prompt as context. Same
+distance, opposite treatment, decided only by rank. Unit 1 flagged exactly this
+and deferred it: *"The real fix is to filter the retrieved chunks by distance
+before building the prompt, rather than passing a fixed count. That's a unit 2
+change, noted here so it's on record."*
+
+### The near miss criterion 1 scored as a pass
+
+Question 5 asks about the wait at Kestrel Commons. The post I wrote the
+question from is `dining_kestrel_commons.txt`, and **it does not appear in the
+top four at all** — its two chunks rank 5th (0.408) and 7th (0.426). What ranks
+1st and 2nd is `dining_kestrel_commons_followup.txt`, a different post that
+happens to restate the same figure, and ranks 3 and 4 are **two other dining
+halls entirely** — Halden Hall at 0.402 and the Ridgeway Cafe at 0.407.
+
+So half the prompt for question 5 is about the wrong building, and the answer
+is correct only because a corroborating post exists. **Stage: embedding.**
+**Mechanism:** every dining followup post shares a near-identical shape —
+"Re: <hall>", a wait time, a queue observation — so the embedding is dominated
+by the *form* of a dining-hall post rather than by which hall it names. The
+building name is one short token against two hundred characters of shared
+phrasing. Criterion 4 confirms the chunking is not at fault: the Kestrel
+sentence is intact in `dining_kestrel_commons.txt#0` with its title attached.
+The chunk is fine; the ranking is what's wrong.
+
+This one is real but I am not fixing it — see *What's Still Broken*.
+
+### Were the targets set low? Yes. Which one I'd tighten, and to what
+
+Criterion 1 is the one to tighten. "One of the top four has the answer" is a
+bar my system clears without effort, and it is blind to the three chunks it
+doesn't ask about.
+
+> **The tightened version, for the next unit:** *Every chunk placed in the
+> model's prompt is closer than the relevance cutoff the gate uses to refuse
+> (0.70).*
+
+Measured now, before any change: **18 of 20 chunks pass, so 18/20 is the
+before-number.** It is a real bar rather than a comfortable one — it can fail,
+it just failed twice, and it makes the system answer to the same standard in
+both directions instead of applying 0.70 only to the best chunk.
+
+This is written here as the tightening Milestone 3 asks for, **not** as a sixth
+criterion and not as a replacement for criterion 1. The verdict table above
+still judges criterion 1 at 4 of 5, which is what [`criteria.md`](criteria.md)
+says, and it is still MET.
 
 ## The Improvement
 

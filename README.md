@@ -584,22 +584,48 @@ word means. All three runs got it right and named the file.
 
 ## Verdicts
 
-<!-- MET or MISSED for each of the five, against the target you wrote last
-     unit — not a new one. Plus a sentence on how you decided. That sentence
-     matters most where it was close.
+Against the targets in [`criteria.md`](criteria.md), written in unit 1 before
+any of these results existed. Nothing below uses a target I set this unit.
 
-     If your target said 4 of 5 and your runs came out 4, 3, 4, that's a MISS.
-     The target has to hold, not show up occasionally.
+| # | Criterion | Target | Verdict | How I decided |
+|---|---|---|---|---|
+| 1 | A retrieved chunk contains the answer | 4 of 5 | **MET** | 5/5, and the answer-bearing chunk is at rank 1 for all five questions, so there is no reading of the numbers where this is close. The caveat below is about how generously I measured it, not about the count. |
+| 2 | Every answer names a source | 5 of 5 | **MET** | All 15 answers named a `.txt` file, and in every case the file named was one retrieval had actually returned — so none of them is a filename the model invented. This was the target most at risk of a single miss, because 5 of 5 allows none, and it held three times over. |
+| 3 | The gate stops out-of-corpus questions | 4 of 5 | **MET** | 5/5, refused at 0.825–0.932 against a 0.70 cutoff. The closest of the five was 0.125 clear of the line. This is the least surprising MET on the list — unit 1 set the cutoff using these same five questions, so passing it now is partly a measure of that calibration rather than of the gate. |
+| 4 | Chunks keep the answer sentence whole, with its topic | 5 of 5 | **MET** | 5/5. Four of the five posts stayed whole as single chunks, so the only real test was `dining_kestrel_commons.txt`, which splits into two — and the wait-time sentence survived intact in chunk 0 with the title attached. |
+| 5 | The answer is correct and grounded in what it cites | 4 of 5 | **MET** | 15/15 across three runs. I read every answer rather than trusting `scorer.py::judge`, because `judge` cannot see an invented claim sitting next to a correct one. The one I weighed was run 3 of question 2, reasoning in the section above; I counted it supported. No answer in any run made a claim its cited document does not carry. |
 
-     Milestone 2. -->
+**All five met, on the first test.** Milestone 3 has the honest reading of that.
 
-| # | Criterion | Verdict | How I decided |
-|---|---|---|---|
-| 1 |  |  |  |
-| 2 |  |  |  |
-| 3 |  |  |  |
-| 4 |  |  |  |
-| 5 |  |  |  |
+### On revising a criterion: I'm not revising any, and here's why
+
+The rule is that a criterion can be revised when it turned out to be
+*unmeasurable* or measured the wrong thing — not when it was fine and I merely
+cleared it. Two of mine have measurement looseness worth recording, and neither
+rises to a revision:
+
+- **Criterion 1's proxy is more generous than the criterion.**
+  `scorer.py::retrieval_contains_answer` treats a chunk as containing the answer
+  if it contains the `expects` phrase. For question 4 that phrase is `W`, and
+  `admin_withdrawal_deadline.txt` — a document about *withdrawal*, which the
+  corpus says is a different thing from dropping — also contains a standalone
+  W. My scorer marks it as having the answer. It does not. The verdict is
+  unaffected, because the genuinely correct chunk is at rank 1, but if the
+  ranking ever flipped, criterion 1 would report a pass I hadn't earned. That's
+  a flaw in my *measurement*, and the criterion as worded ("contains the
+  answer") is the thing that's right.
+- **Criterion 4 depends on strings I chose.** "The relevant topic identifier"
+  left me to decide what the identifier was for each post, and I picked them in
+  `scorer.py::ANSWER_SENTENCES` after seeing the corpus. A stricter or looser
+  choice of identifier would move the result. I pinned the quoted sentences
+  against the documents at import so they can't drift, but the topic strings are
+  still a judgment I made once.
+
+Recording both here rather than quietly revising: the point of leaving the
+originals visible is that someone can see what I said before I knew the answer,
+and neither of these is a case where I'd have written the criterion differently
+for measurement reasons. Where I *would* write them differently is about height,
+not measurability, and that belongs in *What I'd Do Differently*.
 
 ## Diagnoses
 

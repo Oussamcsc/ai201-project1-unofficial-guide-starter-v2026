@@ -88,7 +88,14 @@ MODEL = os.getenv("AI201_MODEL", "gemini-3.5-flash-lite")
 # You should not need to touch these. They exist so that a runaway loop costs
 # you a warning instead of your whole day's allowance.
 
-REQUESTS_PER_MINUTE = 30       # outgoing calls the limiter will allow per minute
+# Was 30, which is over what the free tier actually allows and so never
+# throttled anything. The unit 2 "after" run died partway through on a real
+# 429: "limit: 15, model: gemini-3.5-flash-lite ... Please retry in 55s". The
+# "before" run survived only because it needed exactly 15 calls.
+# 12 leaves margin under that 15. This paces calls and cannot change an
+# answer — it is not the unit 2 improvement, and it is committed on its own so
+# that stays visible.
+REQUESTS_PER_MINUTE = 12       # outgoing calls the limiter will allow per minute
 SESSION_REQUEST_BUDGET = 300   # stop and warn rather than draining the daily quota
 MAX_RETRIES = 4                # on 429 / resource-exhausted, with backoff
 

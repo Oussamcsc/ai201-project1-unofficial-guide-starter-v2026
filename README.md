@@ -726,48 +726,267 @@ says, and it is still MET.
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** `gate.py::keep_relevant` — a new function that drops
+retrieved chunks the gate would not have accepted as a best match.
+`generate.py::build_prompt` calls it, so the chunks that reach the model are
+the ones under the 0.70 cutoff rather than a fixed count of four.
 
-**Why I picked it:**
+Filtering inside `build_prompt` rather than at each call site means `app.py`,
+`run_eval.py` and `serve.py` all get the change without being touched, and
+`--show-prompt` keeps printing exactly what was sent. It cannot empty the
+list: `gate.check` has already established that the best chunk is under the
+threshold, so that chunk always survives.
 
-<!-- Connect it to a specific diagnosis above in one sentence. If you can't,
-     you picked a fix because it sounded impressive. -->
+**Why I picked it:** my diagnosis found the pipeline applying one number two
+opposite ways — refusing a question whose best chunk is 0.71 as too thin to
+reason from, while putting `housing_tamsin_court.txt#1` at **0.736** into
+question 2's prompt as context — and this makes 0.70 mean the same thing in
+both directions.
+
+It is also the fix unit 1 wrote down and deferred: *"The real fix is to filter
+the retrieved chunks by distance before building the prompt, rather than
+passing a fixed count. That's a unit 2 change, noted here so it's on record."*
+
+**One other commit touches config.py** — `REQUESTS_PER_MINUTE` from 30 to 12,
+because the free tier allows 15/min and the first attempt at the after-run died
+on a real 429 partway through. It paces calls and cannot change an answer. It
+is committed on its own, separately from the improvement, so the one-change
+rule stays checkable in the history.
 
 ### Run Log — After
 
-<!-- Same format, same five criteria, three runs each.
-     `python run_eval.py --label after` -->
+Raw file: [`results/run_2026-09-25_1733_after.md`](results/run_2026-09-25_1733_after.md),
+written by `run_eval.py::main`. Same command, same five questions, three runs,
+caching off. 15 model calls, 6,450 tokens.
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. Retrieved chunk contains the answer | 4 of 5 |  |  |  |  |
-| 2. Every answer names a source | 5 of 5 |  |  |  |  |
-| 3. Gate stops out-of-corpus questions | 4 of 5 |  |  |  |  |
-| 4. | | | | | |
-| 5. | | | | | |
+| 1. Retrieved chunk contains the answer | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 2. Every answer names a source | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 3. Gate stops out-of-corpus questions | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 4. Chunks keep the answer sentence whole, with its topic | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 5. Answer is correct and grounded in what it cites | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+
+Side by side:
+
+| | Before | After |
+|---|---|---|
+| Criteria 1–5 | 5/5 all three runs | 5/5 all three runs — **no change** |
+| Chunks placed in prompts (5 questions) | 20 | 18 |
+| Of those, under the 0.70 cutoff | 18 of 20 | **18 of 18** |
+| Furthest chunk put in a prompt | 0.736 | 0.674 |
+| Prompt characters, five questions | 6,963 | 6,373 (−8.5%) |
+| Input tokens, 15 calls | 6,447 | 5,988 (−459) |
+| `test.py` | 10 passed | 10 passed |
+
+Only question 2 changed at all. `course_stat_150_exams.txt#0` (0.724) and
+`housing_tamsin_court.txt#1` (0.736) stopped being handed to the model. The
+other four questions had no chunk past the cutoff, so their prompts are byte
+for byte what they were — which is the result I wanted, since a filter that
+quietly rewrote prompts it had no reason to touch would be a worse change.
+
+Question 2 after the change, all three runs, from
+`generate.py::answer_from_chunks`:
+
+```
+run 1: Juniors and seniors in the housing lottery are ordered by accumulated credit hours first, with any ties broken randomly. (Source: admin_housing_lottery.txt)
+run 2: Juniors and seniors in the housing lottery are ordered by accumulated credit hours first, with a random tie-break used only when necessary (admin_housing_lottery.txt).
+run 3: Juniors and seniors are ordered by accumulated credit hours first, with ties broken randomly.
+
+Source: admin_housing_lottery.txt
+```
+
+**One thing to read carefully in the raw file.** Its `Sources retrieved:` line
+still lists all four documents for question 2, including the two that were
+dropped. That is not the filter failing — `run_eval.py::main` records
+`results` straight from `store.py::search`, before the prompt is built, so that
+line reports what retrieval returned and not what the model saw. I left
+`run_eval.py` alone rather than edit the harness to flatter my own change. The
+evidence the filter was live is the token count: the change removes 590
+characters from question 2's prompt, question 2 ran three times, and the after
+run used **459 fewer input tokens** than the before run. That is the right size
+for three prompts each ~150 tokens shorter, and nothing else changed.
 
 **Did it help?**
 
-<!-- Say plainly whether it did, and how you know. If it made things worse,
-     say that — a change that backfired, honestly reported, earns full credit
-     and is more interesting than one that worked. What matters is that you can
-     tell.
+**It helped the system, and it did not move a single criterion — and the second
+half is the more useful finding.**
 
-     Milestone 4. -->
+What it demonstrably fixed: every chunk that reaches the model is now one the
+gate would accept, 18 of 18 against 18 of 20 before. The worst chunk in any
+prompt went from 0.736 to 0.674. The pipeline no longer contradicts itself.
+
+What it did not do: change any of my five criteria, which sat at 5/5 before and
+sit at 5/5 after. **They could not have moved.** They were already at ceiling,
+so the only thing this change could have done to them is break one, and it
+broke none — all 15 answers still correct, still grounded, still citing a
+document that was really retrieved, `test.py` still 10 passed.
+
+I could present "no regression" as a win and stop. The honest version is that
+**my criteria cannot see this improvement at all.** A change that removes two
+irrelevant documents from a prompt, shrinks it by 8.5%, and makes the system
+apply one standard consistently registers as exactly zero across all five
+things I said "working" meant. That is a fact about criterion 1 — "one of the
+top four has the answer" is indifferent to what the other three are — and it is
+why the tightened version in *Diagnoses* is written at chunk granularity
+instead. Measured against that bar, the change is 18/20 → 18/18.
+
+Being precise about what I have and haven't shown: I have **not** shown this
+makes answers better, because I had no failing answer to fix. On a harder
+question set — one where a 0.736 chunk about Tamsin Court sits next to a real
+answer and the model has to choose — I would expect it to matter, and I have no
+evidence of that here. What I have shown is that it costs nothing and removes a
+real inconsistency.
 
 ## What's Still Broken
 
-<!-- For each criterion still missed after your fix: what you'd do about it,
-     and why you stopped where you did.
+No criterion is missed, before or after. So this section is about the things
+the criteria never asked about, which is where everything broken in this system
+actually is.
 
-     "I ran out of time" is fine if it's true. Pretending nothing is left is
-     not.
+**1. Question 5's own source post never reaches the model.** Diagnosed above as
+an embedding problem: `dining_kestrel_commons.txt` ranks 5th and 7th, below
+`dining_halden_hall_followup.txt` and `dining_the_ridgeway_cafe_followup.txt`,
+because every dining followup shares the same shape — "Re: <hall>", a wait
+time, a queue remark — and the hall's name is one short token against two
+hundred characters of identical phrasing. The answer is right only because a
+corroborating post happens to rank first. Remove that one file and I believe
+question 5 starts answering about the wrong dining hall.
 
-     Milestone 5. -->
+What I'd do: hybrid search. BM25 scores the literal token "Kestrel", which is
+exactly what the embedder is drowning out, and the brief names this as the case
+where keyword search earns its place. `rank-bm25` is already in
+`requirements.txt`.
+
+Why I stopped: the one-change rule, and I picked the other fix deliberately.
+Hybrid search changes the score scale, and every number in this system — the
+0.70 cutoff, `gate.check`, and now `keep_relevant` — is calibrated against
+cosine distance from unit 1. Recalibrating the gate to suit a new scale would
+have been a second change dressed up as part of the first, and I'd have been
+unable to say which of the two moved anything. That's the trade I made
+knowingly, not something I ran out of time for.
+
+**2. I have not shown the improvement improves an answer.** It removes two
+irrelevant chunks and costs nothing, and that is the whole of what I measured.
+Whether a distant chunk actually pulls an answer off course is untested,
+because no question in my set is hard enough to put it to the test.
+
+What I'd do: write questions where two documents genuinely compete — the corpus
+has the pairs for it, `admin_add_drop_deadline.txt` against
+`admin_withdrawal_deadline.txt`, which both mention a W and week six, and the
+seven dining followups against their originals. Then a distant chunk has
+something to spoil.
+
+Why I stopped: new questions are a unit 1 artefact, and changing them now would
+mean my before and after run logs were measuring different things. The right
+place for this is the start of the next unit, not the end of this one.
+
+**3. `scorer.py::judge` can be fooled and I know how.** It checks that the
+answer carries the expected fact and cites a real document. An answer that
+carries the right fact *and an invented one beside it* passes. This unit I
+covered that by reading all 30 answers myself, which is why criterion 5's
+verdict is mine rather than the script's. That does not scale, and a future
+unit with more questions would need the reading replaced with something
+better — most likely checking each claim against the cited chunk rather than
+checking the answer as a whole.
+
+**4. Criterion 1's `W` proxy matches the wrong document.** Written up under
+*Verdicts*. It doesn't affect any verdict here because the correct chunk ranks
+first, but it is a measurement that would report a pass I hadn't earned if the
+ranking ever flipped. A fix would score the chunk that contains the fact *in
+the right context* rather than the fact alone — which is roughly what criterion
+4 already does for chunks, so the machinery exists.
 
 ## What I'd Do Differently
 
-<!-- Knowing what you know now — which of your five criteria would you write
-     differently, and why?
+**Criterion 1, and it's not close.** "For at least 4 of my 5 test questions,
+the retrieved chunks include one that contains the answer" asks whether the
+answer is *somewhere* in the top four. My system puts it at **rank 1 for all
+five questions, at 0.173–0.370**. The criterion cannot fail, and a criterion
+that cannot fail cannot teach me anything — it scored 5/5 before my improvement
+and 5/5 after, while the thing I actually fixed lived entirely in the three
+chunks it never looks at.
 
-     Milestone 5. -->
+I'd write it at chunk granularity instead: *every chunk placed in the model's
+prompt is closer than the cutoff the gate uses to refuse.* That version was
+failing before this unit's change (18 of 20) and passing after (18 of 18),
+which is what a useful criterion looks like — one whose number moves when the
+system does.
+
+**The deeper mistake was in the questions, not the criteria.** All five ask for
+one short fact from one short single-topic admin post. Unit 1 *found* this —
+that's why the gate was calibrated on fifteen extra questions rather than these
+five — and then wrote five criteria that all rest on the same five easy
+questions anyway. Every criterion inherited the same blind spot, so five
+criteria gave me roughly one result five times. Next time I'd write the
+criteria against the hardest questions the corpus can support, not the ones I
+was confident about.
+
+**Criterion 3 I'd measure on different questions.** Mongolia, diesel engines
+and the 1994 World Cup are from another world, so refusing them is easy, and
+unit 1 set the 0.70 cutoff using these same five — passing it now is partly a
+measure of that calibration rather than of the gate. Unit 1 already found the
+questions that would make it a real test: campus-flavoured ones the documents
+don't cover, which land at 0.387–0.724, *inside* the in-corpus range, and which
+`GROUNDING_INSTRUCTION` catches instead of the gate. Criterion 3 should have
+been written against those, where it would have been genuinely at risk.
+
+**Criterion 2 I'd keep exactly as it is.** 5 of 5 allows no misses, it's
+unambiguous, and it held 30 times out of 30 across both run logs. Not every
+criterion needs to be harder — this one is cheap to check and would catch a
+real regression the day the grounding prompt drifts.
+
+## How I Used AI — unit 2
+
+Unit 1's two entries are above and still stand. Three things this unit.
+
+**1. I used it to find the pattern, because everything passed and I needed
+something to diagnose.**
+
+Five criteria, 5/5, three runs. There was no failure to trace, which is the
+least useful outcome the unit can produce. So I had it measure what the
+criteria *don't* look at — every retrieved chunk at every rank, not just the
+one criterion 1 asks about. That produced the two findings the rest of the
+write-up rests on: 8 of 20 chunks in prompts past 0.610, two past the gate's
+own 0.70, and question 5's source post sitting at rank 5 below two unrelated
+dining halls.
+
+Neither of those is visible from the run log `run_eval.py` produces. Both were
+there the whole time.
+
+**2. I made it argue against my own verdicts, and kept the verdict anyway.**
+
+Milestone 2 suggests asking for the opposite case. The one worth testing was
+criterion 5, run 3 of question 2, where the answer says *"a random tie-break
+used only when necessary"* and `admin_housing_lottery.txt` says *"only
+tie-break randomly."* The case against me: "necessary" implies discretion the
+document never grants — the document makes the random step apply to ties as a
+rule, while "when necessary" could be read as the office using randomness
+sparingly when it feels the need. Under criterion 5 an unsupported claim fails
+the question, so that would be 4/5 rather than 5/5.
+
+I kept MET. A tie-break is by definition only needed when there is a tie, so
+"only when necessary" and "only tie-break randomly" pick out the same cases.
+The criterion would still have been MET at 4/5, so nothing hung on it — but it
+is the one place in the run where I could have talked myself into either
+answer, and it is recorded rather than smoothed over.
+
+**3. Where I overruled it.**
+
+It offered to revise criterion 1, pointing at the genuine measurement flaw in
+my `W` proxy — `admin_withdrawal_deadline.txt` also contains a standalone W, so
+the scorer counts a document about withdrawal as containing the answer to a
+question about dropping. That flaw is real and it's written up under
+*Verdicts*. But the revision rule is for criteria that couldn't be measured,
+and mine measured fine; what's wrong with criterion 1 is that it is too easy,
+and the brief is explicit that a criterion you merely cleared doesn't get
+rewritten. Revising it would have been taking credit for a rule I'd have been
+bending. It stays as written, the flaw is recorded, and the tightening lives in
+*What I'd Do Differently* where it can't be confused for a verdict.
+
+I also turned down a second improvement. Hybrid search is the obvious fix for
+the question 5 finding and it was on the table — but it changes the score scale
+that the 0.70 cutoff, `gate.check` and `keep_relevant` are all calibrated
+against, so it would have meant recalibrating the gate too, and I'd have had
+two changes and no way to say which one moved anything. The reasoning is under
+*What's Still Broken*.
